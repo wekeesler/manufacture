@@ -1,5 +1,6 @@
 # Copyright 2022 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl)
+import json
 
 from lxml import etree
 
@@ -111,7 +112,7 @@ class MrpProduction(models.Model):
                 and m.state not in ("done", "cancel")
             )
             if finish_moves and not finish_moves.quantity_done:
-                lot_model = self.env["stock.production.lot"]
+                lot_model = self.env["stock.lot"]
                 lot = lot_model.search(
                     [
                         ("product_id", "=", order.product_id.id),
@@ -128,7 +129,7 @@ class MrpProduction(models.Model):
                         )
                     )
                 if not lot:
-                    lot = self.env["stock.production.lot"].create(
+                    lot = self.env["stock.lot"].create(
                         {
                             "product_id": order.product_id.id,
                             "company_id": order.company_id.id,
@@ -138,29 +139,30 @@ class MrpProduction(models.Model):
                 order.with_context(lot_propagation=True).lot_producing_id = lot
 
     def write(self, vals):
-        for order in self:
-            if (
-                order.is_lot_number_propagated
-                and "lot_producing_id" in vals
-                and not self.env.context.get("lot_propagation")
-            ):
-                raise UserError(
-                    _(
-                        "Lot/Serial number is propagated from a component, "
-                        "you are not allowed to change it."
-                    )
-                )
+        # TODO: this doesn't work in 16 because the workorder writes lot_producing_id when the MO is confirmed
+        # for order in self:
+        #     if (
+        #         order.is_lot_number_propagated
+        #         and "lot_producing_id" in vals
+        #         and not self.env.context.get("lot_propagation")
+        #     ):
+        #         raise UserError(
+        #             _(
+        #                 "Lot/Serial number is propagated from a component, "
+        #                 "you are not allowed to change it."
+        #             )
+        #         )
         return super().write(vals)
 
-    def fields_view_get(
-        self, view_id=None, view_type="form", toolbar=False, submenu=False
+    def get_view(
+        self, view_id=None, view_type="form", **options
     ):
         # Override to hide the "lot_producing_id" field + "action_generate_serial"
         # button if the MO is configured to propagate a serial number
-        result = super().fields_view_get(
-            view_id=view_id, view_type=view_type, toolbar=toolbar, submenu=submenu
+        result = super().get_view(
+            view_id=view_id, view_type=view_type, **options
         )
-        if result.get("name") in self._views_to_adapt():
+        if result.get("id") and self.env['ir.ui.view'].sudo().browse(result["id"]).name in self._views_to_adapt():
             result["arch"] = self._fields_view_get_adapt_lot_tags_attrs(result)
         return result
 
@@ -179,8 +181,8 @@ class MrpProduction(models.Model):
             attrs_key = "invisible"
             nodes = doc.xpath(xpath_expr)
             for field in nodes:
-                attrs = safe_eval(field.attrib.get("attrs", "{}"))
-                if not attrs[attrs_key]:
+                attrs = json.loads(field.attrib.get("modifiers", "{}"))
+                if not attrs.get(attrs_key):
                     continue
                 invisible_domain = expression.OR(
                     [attrs[attrs_key], [("is_lot_number_propagated", "=", True)]]
@@ -188,6 +190,6 @@ class MrpProduction(models.Model):
                 attrs[attrs_key] = invisible_domain
                 field.set("attrs", str(attrs))
                 modifiers = {}
-                transfer_node_to_modifiers(field, modifiers, self.env.context)
+                transfer_node_to_modifiers(field, modifiers)
                 transfer_modifiers_to_node(modifiers, field)
         return etree.tostring(doc, encoding="unicode")
