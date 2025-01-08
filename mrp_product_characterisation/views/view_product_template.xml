@@ -11,9 +11,19 @@ License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
         <field name="inherit_id" ref="product.product_template_form_view" />
         <field name="arch" type="xml">
 
-            <xpath expr="//field[@name='detailed_type']" position="after">
-                <field name="is_component" />
-                <field name="is_intermediate" />
+            <xpath
+                expr="//field[@name='purchase_ok']/.."
+                position="after"
+                groups="mrp.group_mrp_user"
+            >
+                <span class="d-inline-block">
+                    <field name="is_component" />
+                    <label for="is_component" />
+                </span>
+                <span class="d-inline-block">
+                    <field name="is_intermediate" />
+                    <label for="is_intermediate" />
+                </span>
             </xpath>
 
         </field>
